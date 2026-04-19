@@ -1,0 +1,110 @@
+name: Model Monitoring Pipeline
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  monitoring:
+    name: Monitor Model Performance
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Check if Batch Results Exist
+        id: check_results
+        run: |
+          if [ -f "./outputs/batch_results/batch_predictions.csv" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Batch predictions not found. Skipping monitoring."
+          fi
+      
+      - name: Run Model Monitoring
+        if: steps.check_results.outputs.exists == 'true'
+        run: |
+          python -m src.pipelines.model_monitoring \
+            --batch-results-path "./outputs/batch_results/batch_predictions.csv" \
+            --reference-data-dir "./outputs" \
+            --output-dir "./outputs/batch_results/model_monitoring"
+      
+      - name: Generate Monitoring Report
+        if: steps.check_results.outputs.exists == 'true'
+        run: |
+          python << 'EOF'
+          import json
+          from pathlib import Path
+          
+          summary_file = Path("./outputs/batch_results/model_monitoring/monitoring_summary.json")
+          if summary_file.exists():
+            with open(summary_file, 'r') as f:
+              summary = json.load(f)
+            
+            print("\n## 📊 Model Monitoring Report")
+            print(f"\n**Timestamp**: {summary.get('timestamp', 'N/A')}")
+            print(f"\n**Batch Statistics**:")
+            for key, value in summary.get('batch_statistics', {}).items():
+              print(f"- {key}: {value}")
+            
+            print(f"\n**Drift Detection**: {summary['drift_detection'].get('drift_analysis_available', False)}")
+            print(f"\n**Status**: {summary.get('monitoring_status', 'unknown')}")
+          EOF
+      
+      - name: Upload Monitoring Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: model-monitoring-results
+          path: |
+            outputs/batch_results/model_monitoring/
+            logs/
+      
+      - name: Alert on High Drift
+        if: always()
+        run: |
+          python << 'EOF'
+          import json
+          from pathlib import Path
+          
+          summary_file = Path("./outputs/batch_results/model_monitoring/monitoring_summary.json")
+          if summary_file.exists():
+            with open(summary_file, 'r') as f:
+              summary = json.load(f)
+            
+            fraud_pct = summary['batch_statistics'].get('fraud_percentage', 0)
+            ref_fraud = summary['reference_statistics'].get('fraud_rate', 0) * 100
+            
+            drift_pct = abs(fraud_pct - ref_fraud) / (ref_fraud + 1e-6) * 100
+            
+            if drift_pct > 20:
+              print(f"⚠️ HIGH DRIFT DETECTED: {drift_pct:.1f}% change in fraud rate")
+              print(f"   Current: {fraud_pct:.2f}% | Reference: {ref_fraud:.2f}%")
+            else:
+              print(f"✅ Drift within acceptable range: {drift_pct:.1f}%")
+          EOF
+      
+      - name: Notify on Completion
+        if: always()
+        run: |
+          echo "✅ Model monitoring completed!"
+          echo "Check outputs/batch_results/model_monitoring/ for detailed reports."

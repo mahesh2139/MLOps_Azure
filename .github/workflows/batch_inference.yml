@@ -1,0 +1,62 @@
+name: Batch Inference Pipeline
+
+on:
+  schedule:
+    # Run every day at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      batch_input_path:
+        description: 'Batch input data path in datastore'
+        required: false
+        default: 'UI/2026-04-17_180302_UTC/creditcard_batch_input.csv'
+
+jobs:
+  batch_inference:
+    name: Run Batch Inference
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Run Batch Inference
+        run: |
+          python -m src.pipelines.batch_inference \
+            --batch-input-path "${{ github.event.inputs.batch_input_path || 'UI/2026-04-17_180302_UTC/creditcard_batch_input.csv' }}" \
+            --output-dir "./outputs/batch_results" \
+            --model-name "CreditCard_Fraud_Detection"
+      
+      - name: Upload Batch Results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: batch-inference-results
+          path: |
+            outputs/batch_results/
+            logs/
+      
+      - name: Notify on Completion
+        if: always()
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "✅ Batch inference completed successfully!"
+            echo "Results saved to outputs/batch_results/"
+          else
+            echo "❌ Batch inference failed!"
+          fi

@@ -1,0 +1,362 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mlops
+  labels:
+    name: mlops
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlops-config
+  namespace: mlops
+data:
+  MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  MLFLOW_EXPERIMENT_NAME: "CreditCard_Fraud_Detection"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: azure-ml-secrets
+  namespace: mlops
+type: Opaque
+stringData:
+  AZURE_SUBSCRIPTION_ID: "YOUR_SUBSCRIPTION_ID"
+  AZURE_RESOURCE_GROUP: "YOUR_RESOURCE_GROUP"
+  AZURE_WORKSPACE_NAME: "YOUR_WORKSPACE_NAME"
+  AZURE_CLIENT_ID: "YOUR_CLIENT_ID"
+  AZURE_CLIENT_SECRET: "YOUR_CLIENT_SECRET"
+  AZURE_TENANT_ID: "YOUR_TENANT_ID"
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mlops-pv
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: fast
+  azureDisk:
+    kind: Managed
+    diskName: mlops-disk
+    diskURI: /subscriptions/YOUR_SUBSCRIPTION/resourceGroups/YOUR_RG/providers/Microsoft.Compute/disks/mlops-disk
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlops-pvc
+  namespace: mlops
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: fast
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: mlops
+  labels:
+    app: mlflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      containers:
+      - name: mlflow
+        image: ghcr.io/mlflow/mlflow:latest
+        ports:
+        - containerPort: 5000
+        volumeMounts:
+        - name: mlflow-storage
+          mountPath: /mlflow
+        env:
+        - name: BACKEND_STORE_URI
+          value: "file:///mlflow/backend"
+        - name: DEFAULT_ARTIFACT_ROOT
+          value: "/mlflow/artifacts"
+        livenessProbe:
+          httpGet:
+            path: /api/2.0/mlflow/version
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/2.0/mlflow/version
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+      volumes:
+      - name: mlflow-storage
+        persistentVolumeClaim:
+          claimName: mlops-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: mlops
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5000
+    targetPort: 5000
+  selector:
+    app: mlflow
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: data-prep
+  namespace: mlops
+spec:
+  template:
+    spec:
+      serviceAccountName: mlops-sa
+      containers:
+      - name: data-prep
+        image: mlopsacr.azurecr.io/mlops-pipeline:latest
+        command: ["python", "-m", "src.pipelines.data_prep"]
+        envFrom:
+        - configMapRef:
+            name: mlops-config
+        - secretRef:
+            name: azure-ml-secrets
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /app/outputs
+        - name: config
+          mountPath: /app/config.json
+          subPath: config.json
+        resources:
+          requests:
+            cpu: 1
+            memory: 2Gi
+          limits:
+            cpu: 2
+            memory: 4Gi
+      volumes:
+      - name: shared-storage
+        persistentVolumeClaim:
+          claimName: mlops-pvc
+      - name: config
+        configMap:
+          name: mlops-config
+      restartPolicy: Never
+  backoffLimit: 3
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: model-training
+  namespace: mlops
+spec:
+  template:
+    spec:
+      serviceAccountName: mlops-sa
+      containers:
+      - name: train
+        image: mlopsacr.azurecr.io/mlops-pipeline:latest
+        command: ["python", "-m", "src.pipelines.train"]
+        envFrom:
+        - configMapRef:
+            name: mlops-config
+        - secretRef:
+            name: azure-ml-secrets
+        volumeMounts:
+        - name: shared-storage
+          mountPath: /app/outputs
+        - name: config
+          mountPath: /app/config.json
+          subPath: config.json
+        resources:
+          requests:
+            cpu: 2
+            memory: 4Gi
+          limits:
+            cpu: 4
+            memory: 8Gi
+      volumes:
+      - name: shared-storage
+        persistentVolumeClaim:
+          claimName: mlops-pvc
+      - name: config
+        configMap:
+          name: mlops-config
+      restartPolicy: Never
+  backoffLimit: 3
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: batch-inference-daily
+  namespace: mlops
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: mlops-sa
+          containers:
+          - name: batch-inference
+            image: mlopsacr.azurecr.io/mlops-pipeline:latest
+            command: ["python", "-m", "src.pipelines.batch_inference"]
+            envFrom:
+            - configMapRef:
+                name: mlops-config
+            - secretRef:
+                name: azure-ml-secrets
+            volumeMounts:
+            - name: shared-storage
+              mountPath: /app/outputs
+            - name: config
+              mountPath: /app/config.json
+              subPath: config.json
+            resources:
+              requests:
+                cpu: 2
+                memory: 4Gi
+              limits:
+                cpu: 4
+                memory: 8Gi
+          volumes:
+          - name: shared-storage
+            persistentVolumeClaim:
+              claimName: mlops-pvc
+          - name: config
+            configMap:
+              name: mlops-config
+          restartPolicy: OnFailure
+      backoffLimit: 3
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: model-monitoring-6h
+  namespace: mlops
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: mlops-sa
+          containers:
+          - name: monitoring
+            image: mlopsacr.azurecr.io/mlops-pipeline:latest
+            command: ["python", "-m", "src.pipelines.model_monitoring"]
+            envFrom:
+            - configMapRef:
+                name: mlops-config
+            - secretRef:
+                name: azure-ml-secrets
+            volumeMounts:
+            - name: shared-storage
+              mountPath: /app/outputs
+            - name: config
+              mountPath: /app/config.json
+              subPath: config.json
+            resources:
+              requests:
+                cpu: 1
+                memory: 2Gi
+              limits:
+                cpu: 2
+                memory: 4Gi
+          volumes:
+          - name: shared-storage
+            persistentVolumeClaim:
+              claimName: mlops-pvc
+          - name: config
+            configMap:
+              name: mlops-config
+          restartPolicy: OnFailure
+      backoffLimit: 3
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlops-sa
+  namespace: mlops
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mlops-role
+  namespace: mlops
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mlops-rolebinding
+  namespace: mlops
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mlops-role
+subjects:
+- kind: ServiceAccount
+  name: mlops-sa
+  namespace: mlops
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mlops-alerts
+  namespace: mlops
+spec:
+  groups:
+  - name: mlops.rules
+    interval: 30s
+    rules:
+    - alert: JobFailed
+      expr: kube_job_status_failed > 0
+      for: 5m
+      annotations:
+        summary: "MLOps job failed"
+    - alert: HighMemoryUsage
+      expr: container_memory_usage_bytes{namespace="mlops"} > 7000000000
+      for: 5m
+      annotations:
+        summary: "High memory usage in mlops namespace"

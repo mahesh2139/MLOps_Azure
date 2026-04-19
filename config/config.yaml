@@ -1,0 +1,52 @@
+# MLOps Configuration for Credit Card Fraud Detection
+---
+
+# Azure ML Configuration
+azure_ml:
+  workspace_name: "default"
+  resource_group: "default"
+  subscription_id: "default"
+  datastore_name: "workspaceblobstore"
+
+# Data Configuration
+data:
+  input_datastore_path: "UI/2026-04-04_090211_UTC/creditcard_train.csv"
+  batch_input_path: "UI/2026-04-17_180302_UTC/creditcard_batch_input.csv"
+  local_data_dir: "./data"
+  test_size: 0.2
+  random_state: 42
+
+# Model Configuration
+model:
+  name: "CreditCard_Fraud_Detection"
+  model_type: "RandomForestClassifier"
+  framework: "sklearn"
+  hyperparameters:
+    n_estimators: 100
+    max_depth: 10
+    random_state: 42
+    n_jobs: -1
+
+# Paths
+paths:
+  base_dir: "./"
+  outputs_dir: "./outputs"
+  models_dir: "./outputs/models"
+  batch_results_dir: "./outputs/batch_results"
+  monitoring_dir: "./outputs/batch_results/model_monitoring"
+  champion_model_dir: "./outputs/champion_model"
+  logs_dir: "./logs"
+
+# MLflow Configuration
+mlflow:
+  experiment_name: "CreditCard_Fraud_Detection"
+  tracking_uri: "http://localhost:5000"
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "[%(asctime)s] %(name)s - %(levelname)s - %(message)s"
+  handlers:
+    - console
+    - file
+  log_file: "./logs/mlops.log"

@@ -1,0 +1,45 @@
+# Model Performance Thresholds for Governance
+---
+
+# Minimum acceptable metrics for model promotion
+model_validation:
+  accuracy:
+    min_threshold: 0.60
+    description: "Minimum overall accuracy"
+    
+  precision:
+    min_threshold: 0.60
+    description: "Minimum precision (frauds detected correctly)"
+    
+  recall:
+    min_threshold: 0.60
+    description: "Minimum recall (frauds actually detected)"
+    
+  f1_score:
+    min_threshold: 0.60
+    description: "Minimum F1 score (balance of precision/recall)"
+
+# Data Drift Detection Thresholds
+data_drift:
+  feature_drift_threshold: 0.1
+  allowed_drift_columns: 3
+  description: "Maximum number of features that can have significant drift"
+
+# Model Monitoring Thresholds
+monitoring:
+  performance_degradation_threshold: 0.05
+  data_distribution_shift_threshold: 0.15
+  description: "Alerts triggered if metrics drop by >5% or data shift >15%"
+
+# Approval Gates
+approval_gates:
+  require_metrics_validation: true
+  require_explainability_review: true
+  require_manual_approval: true
+  approval_timeout_hours: 24
+  description: "Governance checkpoints before production deployment"
+
+# Feature Importance
+feature_importance:
+  min_tracked_features: 10
+  description: "Minimum features to track for explainability"

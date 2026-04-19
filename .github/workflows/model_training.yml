@@ -55,34 +55,16 @@ jobs:
           az configure --defaults group=$RESOURCE_GROUP workspace=$WORKSPACE_NAME
       
       - name: Step 1: Data Preparation
-        run: |
-          python -m src.pipelines.data_prep \
-            --input-datastore-path "UI/2026-04-04_090211_UTC/creditcard_train.csv" \
-            --local-data-dir "./data" \
-            --output-dir "./outputs/prepared_data"
+        run: python -m src.pipelines.data_prep --input-datastore-path "UI/2026-04-04_090211_UTC/creditcard_train.csv" --local-data-dir "./data" --output-dir "./outputs/prepared_data"
       
       - name: Step 2: Model Training
-        run: |
-          python -m src.pipelines.train \
-            --prepared-data-dir "./outputs/prepared_data" \
-            --output-dir "./outputs" \
-            --mlflow-experiment "${{ github.event.inputs.experiment_name || 'CreditCard_Fraud_Detection' }}"
+        run: python -m src.pipelines.train --prepared-data-dir "./outputs/prepared_data" --output-dir "./outputs" --mlflow-experiment "${{ github.event.inputs.experiment_name || 'CreditCard_Fraud_Detection' }}"
       
       - name: Step 3: Model Evaluation
-        run: |
-          python -m src.pipelines.evaluate \
-            --model-path "./outputs/model.pkl" \
-            --test-data-dir "./outputs" \
-            --output-dir "./outputs" \
-            --thresholds-config "./config/thresholds.yaml"
+        run: python -m src.pipelines.evaluate --model-path "./outputs/model.pkl" --test-data-dir "./outputs" --output-dir "./outputs" --thresholds-config "./config/thresholds.yaml"
       
       - name: Step 4: Champion/Challenger Selection
-        run: |
-          python -m src.pipelines.champion_challenger \
-            --model-path "./outputs/model.pkl" \
-            --metrics-path "./outputs/metrics.json" \
-            --model-name "CreditCard_Fraud_Detection" \
-            --output-dir "./outputs"
+        run: python -m src.pipelines.champion_challenger --model-path "./outputs/model.pkl" --metrics-path "./outputs/metrics.json" --model-name "CreditCard_Fraud_Detection" --output-dir "./outputs"
       
       - name: Upload Artifacts
         uses: actions/upload-artifact@v3

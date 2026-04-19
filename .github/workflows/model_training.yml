@@ -56,19 +56,33 @@ jobs:
       
       - name: Step 1: Data Preparation
         run: |
-          python -m src.pipelines.data_prep --input-datastore-path 'UI/2026-04-04_090211_UTC/creditcard_train.csv' --local-data-dir './data' --output-dir './outputs/prepared_data'
+          python -m src.pipelines.data_prep \
+            --input-datastore-path 'UI/2026-04-04_090211_UTC/creditcard_train.csv' \
+            --local-data-dir './data' \
+            --output-dir './outputs/prepared_data'
       
       - name: Step 2: Model Training
         run: |
-          python -m src.pipelines.train --prepared-data-dir './outputs/prepared_data' --output-dir './outputs' --mlflow-experiment "${{ github.event.inputs.experiment_name || 'CreditCard_Fraud_Detection' }}"
+          python -m src.pipelines.train \
+            --prepared-data-dir './outputs/prepared_data' \
+            --output-dir './outputs' \
+            --mlflow-experiment "${{ github.event.inputs.experiment_name || 'CreditCard_Fraud_Detection' }}"
       
       - name: Step 3: Model Evaluation
         run: |
-          python -m src.pipelines.evaluate --model-path './outputs/model.pkl' --test-data-dir './outputs' --output-dir './outputs' --thresholds-config './config/thresholds.yaml'
+          python -m src.pipelines.evaluate \
+            --model-path './outputs/model.pkl' \
+            --test-data-dir './outputs' \
+            --output-dir './outputs' \
+            --thresholds-config './config/thresholds.yaml'
       
       - name: Step 4: Champion/Challenger Selection
         run: |
-          python -m src.pipelines.champion_challenger --model-path './outputs/model.pkl' --metrics-path './outputs/metrics.json' --model-name 'CreditCard_Fraud_Detection' --output-dir './outputs'
+          python -m src.pipelines.champion_challenger \
+            --model-path './outputs/model.pkl' \
+            --metrics-path './outputs/metrics.json' \
+            --model-name 'CreditCard_Fraud_Detection' \
+            --output-dir './outputs'
       
       - name: Upload Artifacts
         uses: actions/upload-artifact@v3
@@ -79,42 +93,12 @@ jobs:
             outputs/
             logs/
       
-      - name: Comment on PR with Results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const fs = require('fs');
-            const results = JSON.parse(fs.readFileSync('./outputs/training_result.json', 'utf8'));
-            const evaluation = JSON.parse(fs.readFileSync('./outputs/evaluation_report.json', 'utf8'));
-            
-            let comment = '## 🤖 Model Training Results\n\n';
-            comment += '### Metrics\n';
-            Object.entries(results.metrics).forEach(([key, value]) => {
-              comment += '- **' + key + '**: ' + value.toFixed(4) + '\n';
-            });
-            
-            comment += '\n### Governance Gates\n';
-            Object.entries(evaluation.governance_gates).forEach(([key, value]) => {
-              const status = value ? '✅' : '❌';
-              comment += '- ' + status + ' ' + key + '\n';
-            });
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
-      
       - name: Notify on Success
         if: success()
         run: |
           echo "✅ Model training pipeline completed successfully!"
-          echo "Check outputs/ directory for artifacts and evaluation_report.json for governance gates."
       
       - name: Notify on Failure
         if: failure()
         run: |
           echo "❌ Model training pipeline failed!"
-          echo "Check logs/ directory for detailed error information."

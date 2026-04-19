@@ -105,13 +105,13 @@ jobs:
             let comment = '## 🤖 Model Training Results\n\n';
             comment += '### Metrics\n';
             Object.entries(results.metrics).forEach(([key, value]) => {
-              comment += `- **${key}**: ${value.toFixed(4)}\n`;
+              comment += '- **' + key + '**: ' + value.toFixed(4) + '\n';
             });
             
             comment += '\n### Governance Gates\n';
             Object.entries(evaluation.governance_gates).forEach(([key, value]) => {
               const status = value ? '✅' : '❌';
-              comment += `- ${status} ${key}\n`;
+              comment += '- ' + status + ' ' + key + '\n';
             });
             
             github.rest.issues.createComment({

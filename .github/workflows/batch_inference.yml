@@ -1,9 +1,16 @@
 name: Batch Inference Pipeline
 
 on:
-  schedule:
-    # Run every day at 2 AM UTC
-    - cron: '0 2 * * *'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/pipelines/batch_inference.py'
+#on:
+#  schedule:
+#    # Run every day at 2 AM UTC
+#   - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
       batch_input_path:

@@ -65,7 +65,7 @@ jobs:
           './outputs/model.pkl' --metrics-path './outputs/metrics.json'
           --model-name 'CreditCard_Fraud_Detection' --output-dir './outputs'
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: model-training-artifacts

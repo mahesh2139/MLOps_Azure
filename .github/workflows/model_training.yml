@@ -1,71 +1,69 @@
 name: Model Training Pipeline
-
 on:
   push:
     branches:
       - main
       - develop
     paths:
-      - 'src/pipelines/train.py'
-      - 'src/components/**'
-      - 'config/**'
+      - src/pipelines/train.py
+      - src/components/**
+      - config/**
   workflow_dispatch:
     inputs:
       experiment_name:
-        description: 'MLflow experiment name'
+        description: MLflow experiment name
         required: false
-        default: 'CreditCard_Fraud_Detection'
-
+        default: CreditCard_Fraud_Detection
 jobs:
   train:
     name: Train and Evaluate Model
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
-      
+          python-version: "3.8"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
       - name: Set up Azure ML CLI
         run: |
           pip install azure-cli
           az extension add -n ml
-      
       - name: Configure Azure ML workspace
         env:
           SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
           WORKSPACE_NAME: ${{ secrets.AZURE_WORKSPACE_NAME }}
-        run: |
+        run: >
           az account set --subscription $SUBSCRIPTION_ID
+
           az configure --defaults group=$RESOURCE_GROUP workspace=$WORKSPACE_NAME
-      
-      - name: Step 1: Data Preparation
-        run: python -m src.pipelines.data_prep --input-datastore-path 'UI/2026-04-04_090211_UTC/creditcard_train.csv' --local-data-dir './data' --output-dir './outputs/prepared_data'
-      
-      - name: Step 2: Model Training
-        run: python -m src.pipelines.train --prepared-data-dir './outputs/prepared_data' --output-dir './outputs' --mlflow-experiment "${{ github.event.inputs.experiment_name || 'CreditCard_Fraud_Detection' }}"
-      
-      - name: Step 3: Model Evaluation
-        run: python -m src.pipelines.evaluate --model-path './outputs/model.pkl' --test-data-dir './outputs' --output-dir './outputs' --thresholds-config './config/thresholds.yaml'
-      
-      - name: Step 4: Champion/Challenger Selection
-        run: python -m src.pipelines.champion_challenger --model-path './outputs/model.pkl' --metrics-path './outputs/metrics.json' --model-name 'CreditCard_Fraud_Detection' --output-dir './outputs'
-      
+      - name: Step 1 - Data Preparation
+        run: >
+          python -m src.pipelines.data_prep --input-datastore-path
+          'UI/2026-04-04_090211_UTC/creditcard_train.csv' --local-data-dir
+          './data' --output-dir './outputs/prepared_data'
+      - name: Step 2 - Model Training
+        env:
+          EXPERIMENT_NAME: ${{ github.event.inputs.experiment_name }}
+        run: python -m src.pipelines.train --prepared-data-dir './outputs/prepared_data'
+          --output-dir './outputs' --mlflow-experiment "$EXPERIMENT_NAME"
+      - name: Step 3 - Model Evaluation
+        run: python -m src.pipelines.evaluate --model-path './outputs/model.pkl'
+          --test-data-dir './outputs' --output-dir './outputs'
+          --thresholds-config './config/thresholds.yaml'
+      - name: Step 4 - Champion/Challenger Selection
+        run: python -m src.pipelines.champion_challenger --model-path
+          './outputs/model.pkl' --metrics-path './outputs/metrics.json'
+          --model-name 'CreditCard_Fraud_Detection' --output-dir './outputs'
       - name: Upload Artifacts
         uses: actions/upload-artifact@v3
         if: always()
@@ -74,12 +72,10 @@ jobs:
           path: |
             outputs/
             logs/
-      
       - name: Notify on Success
         if: success()
         run: |
           echo "✅ Model training pipeline completed successfully!"
-      
       - name: Notify on Failure
         if: failure()
         run: |

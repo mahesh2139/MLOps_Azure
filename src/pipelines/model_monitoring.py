@@ -8,7 +8,6 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import joblib
-from azureml.core import Workspace
 from src.components.logger import setup_logger, log_section, log_step
 
 logger = setup_logger(__name__, log_file="monitoring.log")

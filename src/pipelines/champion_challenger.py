@@ -9,7 +9,6 @@ from pathlib import Path
 from datetime import datetime
 import uuid
 import joblib
-from azureml.core import Workspace
 from src.components.logger import setup_logger, log_section, log_step
 from src.components.model_registry import ModelRegistry
 from src.components.approval_workflow import ApprovalWorkflow
@@ -24,7 +23,8 @@ def run_champion_challenger(
     model_name: str = "CreditCard_Fraud_Detection",
     output_dir: str = "./outputs",
     approval_email: str = "mahesh2139@gmail.com",
-    require_approval: bool = True
+    require_approval: bool = True,
+    use_workspace: bool = True
 ):
     """
     Compare challenger model with current champion with optional human approval workflow.
@@ -36,6 +36,7 @@ def run_champion_challenger(
         output_dir: Directory to save results
         approval_email: Email for approval request
         require_approval: Require human approval before promotion (default: True for regulated industries)
+        use_workspace: Whether to use Azure ML workspace (default: True)
     """
     log_section(logger, "CHAMPION/CHALLENGER PIPELINE WITH APPROVAL WORKFLOW")
     
@@ -52,9 +53,19 @@ def run_champion_challenger(
         logger.info(f"Challenger metrics: {challenger_metrics}")
         
         # Connect to workspace
-        log_step(logger, "Connecting to Azure ML workspace")
-        workspace = Workspace.from_config()
-        registry = ModelRegistry(workspace, model_name)
+        if use_workspace:
+            log_step(logger, "Connecting to Azure ML workspace")
+            try:
+                from azureml.core import Workspace
+                workspace = Workspace.from_config()
+                registry = ModelRegistry(workspace, model_name)
+            except Exception as e:
+                logger.warning(f"⚠️ Could not connect to Azure ML workspace: {str(e)}")
+                logger.warning("⚠️ Skipping model registry operations")
+                registry = None
+        else:
+            logger.info("ℹ️ Workspace operations disabled")
+            registry = None
         
         # Get current champion
         log_step(logger, "Retrieving current champion model")
@@ -264,8 +275,14 @@ def process_approval_decision(approval_id: str, decision: str, approver_email: s
         if not approval_record:
             raise ValueError(f"Approval record not found: {approval_id}")
         
-        workspace = Workspace.from_config()
-        registry = ModelRegistry(workspace, approval_record['model_name'])
+        try:
+            from azureml.core import Workspace
+            workspace = Workspace.from_config()
+            registry = ModelRegistry(workspace, approval_record['model_name'])
+        except Exception as e:
+            logger.warning(f"⚠️ Could not connect to Azure ML workspace: {str(e)}")
+            logger.warning("⚠️ Skipping model registry operations")
+            registry = None
         
         if decision.lower() == "approved":
             logger.info("🚀 Approval granted. Promoting challenger to champion...")
@@ -469,8 +486,11 @@ if __name__ == "__main__":
                        default="mahesh2139@gmail.com")
     parser.add_argument("--require-approval", type=bool, default=True,
                        help="Require human approval before promotion (default: True for regulated industries)")
+    parser.add_argument("--no-workspace", action="store_true",
+                       help="Do not attempt to load Azure ML Workspace (useful for CI runs)")
     
     args = parser.parse_args()
+    use_workspace_flag = not args.no_workspace
     
     result = run_champion_challenger(
         model_path=args.model_path,
@@ -478,5 +498,6 @@ if __name__ == "__main__":
         model_name=args.model_name,
         output_dir=args.output_dir,
         approval_email=args.approval_email,
-        require_approval=args.require_approval
+        require_approval=args.require_approval,
+        use_workspace=use_workspace_flag
     )

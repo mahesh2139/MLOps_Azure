@@ -8,7 +8,6 @@ from pathlib import Path
 import pandas as pd
 import joblib
 from sklearn.metrics import classification_report
-from azureml.core import Workspace
 from src.components.logger import setup_logger, log_section, log_step
 from src.components.data_loader import DataLoader
 from src.components.model_registry import ModelRegistry
@@ -35,7 +34,13 @@ def run_batch_inference(
     
     try:
         # Connect to workspace
-        workspace = Workspace.from_config() if use_workspace else None
+        workspace = None
+        if use_workspace:
+            try:
+                from azureml.core import Workspace
+                workspace = Workspace.from_config()
+            except Exception as e:
+                logger.warning(f"Could not load workspace: {str(e)}")
         
         # Load batch data
         log_step(logger, "Loading batch data")

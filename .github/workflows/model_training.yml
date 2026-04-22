@@ -70,7 +70,7 @@ jobs:
       - name: Step 4 - Champion/Challenger Selection
         run: python -m src.pipelines.champion_challenger --model-path
           './outputs/model.pkl' --metrics-path './outputs/metrics.json'
-          --model-name 'CreditCard_Fraud_Detection' --output-dir './outputs'
+          --model-name 'CreditCard_Fraud_Detection' --output-dir './outputs' --no-workspace
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         if: always()

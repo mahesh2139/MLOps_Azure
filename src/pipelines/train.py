@@ -11,7 +11,6 @@ import joblib
 import pandas as pd
 import mlflow
 import mlflow.sklearn
-from azureml.core import Workspace
 from src.components.logger import setup_logger, log_section, log_step
 from src.components.model_trainer import ModelTrainer, ModelEvaluator, ModelSaver
 
@@ -94,6 +93,7 @@ def run_training(
         # Setup MLflow
         if mlflow_enabled:
             try:
+                from azureml.core import Workspace
                 workspace = Workspace.from_config()
                 mlflow.set_tracking_uri(workspace.get_mlflow_tracking_uri())
             except:

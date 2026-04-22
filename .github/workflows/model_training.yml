@@ -59,10 +59,8 @@ jobs:
           'UI/2026-04-04_090211_UTC/creditcard_train.csv' --local-data-dir
           './data' --output-dir './outputs/prepared_data' --no-workspace
       - name: Step 2 - Model Training
-        env:
-          EXPERIMENT_NAME: ${{ github.event.inputs.experiment_name }}
         run: python -m src.pipelines.train --prepared-data-dir './outputs/prepared_data'
-          --output-dir './outputs' --mlflow-experiment "$EXPERIMENT_NAME"
+          --output-dir './outputs' --mlflow-experiment '${{ github.event.inputs.experiment_name || "CreditCard_Fraud_Detection" }}' --no-mlflow
       - name: Step 3 - Model Evaluation
         run: python -m src.pipelines.evaluate --model-path './outputs/model.pkl'
           --test-data-dir './outputs' --output-dir './outputs'

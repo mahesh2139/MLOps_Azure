@@ -22,7 +22,8 @@ def run_training(
     output_dir: str,
     model_params: dict = None,
     mlflow_experiment: str = "CreditCard_Fraud_Detection",
-    mlflow_enabled: bool = True
+    mlflow_enabled: bool = True,
+    skip_mlflow: bool = False
 ):
     """
     Train model.
@@ -91,7 +92,12 @@ def run_training(
         logger.info(f"Loaded training data: X_train {x_train.shape}, X_test {x_test.shape}")
         
         # Setup MLflow
-        if mlflow_enabled:
+        if mlflow_enabled and not skip_mlflow:
+            # Validate experiment name
+            if not mlflow_experiment or not mlflow_experiment.strip():
+                logger.warning("Empty experiment name provided, using default")
+                mlflow_experiment = "CreditCard_Fraud_Detection"
+            
             try:
                 from azureml.core import Workspace
                 workspace = Workspace.from_config()
@@ -100,6 +106,9 @@ def run_training(
                 logger.warning("Could not connect to Azure ML workspace for MLflow")
             
             mlflow.set_experiment(mlflow_experiment)
+        elif skip_mlflow:
+            logger.info("ℹ️ MLflow logging disabled")
+            mlflow_enabled = False
         
         # Train model
         log_step(logger, "Training RandomForest classifier")
@@ -159,11 +168,14 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default="./outputs")
     parser.add_argument("--mlflow-experiment", type=str, 
                        default="CreditCard_Fraud_Detection")
+    parser.add_argument("--no-mlflow", action="store_true",
+                       help="Disable MLflow logging (useful for CI runs without workspace)")
     
     args = parser.parse_args()
     
     result = run_training(
         prepared_data_dir=args.prepared_data_dir,
         output_dir=args.output_dir,
-        mlflow_experiment=args.mlflow_experiment
+        mlflow_experiment=args.mlflow_experiment,
+        skip_mlflow=args.no_mlflow
     )

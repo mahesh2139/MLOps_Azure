@@ -57,7 +57,7 @@ jobs:
         run: >
           python -m src.pipelines.data_prep --input-datastore-path
           'UI/2026-04-04_090211_UTC/creditcard_train.csv' --local-data-dir
-          './data' --output-dir './outputs/prepared_data'
+          './data' --output-dir './outputs/prepared_data' --no-workspace
       - name: Step 2 - Model Training
         env:
           EXPERIMENT_NAME: ${{ github.event.inputs.experiment_name }}

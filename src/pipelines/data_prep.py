@@ -5,7 +5,8 @@ import logging
 import argparse
 from pathlib import Path
 from sklearn.model_selection import train_test_split
-from azureml.core import Workspace
+# Import Azure ML Workspace lazily inside the function to avoid import-time
+# failures in CI when azureml SDK or its dependencies are not available.
 from src.components.logger import setup_logger, log_section, log_step
 from src.components.data_loader import DataLoader, DataPreprocessor
 
@@ -35,7 +36,10 @@ def run_data_prep(
     
     try:
         # Initialize data loader
-        workspace = Workspace.from_config() if use_workspace else None
+        workspace = None
+        if use_workspace:
+            from azureml.core import Workspace
+            workspace = Workspace.from_config()
         loader = DataLoader(workspace=workspace)
         
         log_step(logger, "Loading data from Azure ML datastore")
@@ -98,15 +102,23 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", type=str, default="./outputs/prepared_data")
     parser.add_argument("--test-size", type=float, default=0.2)
     parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument(
+        "--no-workspace",
+        action="store_true",
+        help="Do not attempt to load Azure ML Workspace (useful for CI runs)"
+    )
     
     args = parser.parse_args()
     
+    use_workspace_flag = not args.no_workspace
+
     result = run_data_prep(
         input_datastore_path=args.input_datastore_path,
         local_data_dir=args.local_data_dir,
         output_dir=args.output_dir,
         test_size=args.test_size,
         random_state=args.random_state
+        , use_workspace=use_workspace_flag
     )
     
     import json

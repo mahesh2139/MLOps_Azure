@@ -38,7 +38,48 @@ def run_batch_inference(
         if use_workspace:
             try:
                 from azureml.core import Workspace
-                workspace = Workspace.from_config()
+                # Try to load from config first
+                try:
+                    workspace = Workspace.from_config()
+                except:
+                    # Fallback: create workspace from environment variables
+                    import os
+                    subscription_id = os.environ.get('AZUREML_SUBSCRIPTION_ID')
+                    resource_group = os.environ.get('AZUREML_RESOURCE_GROUP')
+                    workspace_name = os.environ.get('AZUREML_WORKSPACE_NAME')
+                    
+                    # Try service principal authentication
+                    tenant_id = os.environ.get('AZURE_TENANT_ID')
+                    client_id = os.environ.get('AZURE_CLIENT_ID')
+                    client_secret = os.environ.get('AZURE_CLIENT_SECRET')
+                    
+                    if all([subscription_id, resource_group, workspace_name]):
+                        if tenant_id and client_id and client_secret:
+                            # Use service principal
+                            from azure.identity import ClientSecretCredential
+                            credential = ClientSecretCredential(
+                                tenant_id=tenant_id,
+                                client_id=client_id,
+                                client_secret=client_secret
+                            )
+                            workspace = Workspace.get(
+                                name=workspace_name,
+                                subscription_id=subscription_id,
+                                resource_group=resource_group,
+                                credential=credential
+                            )
+                            logger.info(f"✅ Connected to workspace via service principal: {workspace.name}")
+                        else:
+                            # Try default credential
+                            from azure.identity import DefaultAzureCredential
+                            credential = DefaultAzureCredential()
+                            workspace = Workspace.get(
+                                name=workspace_name,
+                                subscription_id=subscription_id,
+                                resource_group=resource_group,
+                                credential=credential
+                            )
+                            logger.info(f"✅ Connected to workspace from env: {workspace.name}")
             except Exception as e:
                 logger.warning(f"Could not load workspace: {str(e)}")
         
@@ -116,14 +157,29 @@ def run_batch_inference(
         # Prepare data
         log_step(logger, "Preparing data for inference")
         target_col = 'Class'
+        
+        # Drop non-feature columns (ID, Time) if present
+        cols_to_drop = []
+        if 'ID' in batch_df.columns:
+            cols_to_drop.append('ID')
+        if 'Time' in batch_df.columns:
+            cols_to_drop.append('Time')
         if target_col in batch_df.columns:
-            X = batch_df.drop(columns=[target_col])
-            y_true = batch_df[target_col]
-            has_target = True
+            cols_to_drop.append(target_col)
+        
+        if cols_to_drop:
+            X = batch_df.drop(columns=cols_to_drop)
+            y_true = batch_df[target_col] if target_col in batch_df.columns else None
+            has_target = target_col in batch_df.columns
         else:
-            X = batch_df
-            y_true = None
-            has_target = False
+            if target_col in batch_df.columns:
+                X = batch_df.drop(columns=[target_col])
+                y_true = batch_df[target_col]
+                has_target = True
+            else:
+                X = batch_df
+                y_true = None
+                has_target = False
         
         logger.info(f"Features shape: {X.shape}")
         

@@ -2,11 +2,11 @@
 Data loading and preprocessing components.
 """
 import logging
+import os
 from pathlib import Path
 from typing import Tuple, Optional
 import pandas as pd
-from azureml.core import Workspace, Dataset, Datastore
-from azureml.data.datapath import DataPath
+from azureml.core import Workspace, Datastore
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +30,11 @@ class DataLoader:
         datastore_name: str = "workspaceblobstore"
     ) -> pd.DataFrame:
         """
-        Load data from Azure ML datastore.
+        Load data from Azure ML datastore using Azure Storage Blob SDK.
         
         Args:
             datastore_path: Path in datastore (e.g., 'UI/2026-04-04_090211_UTC/file.csv')
+                           or azureml:// URI
             local_download_dir: Directory to download file to
             datastore_name: Name of the datastore
             
@@ -45,14 +46,50 @@ class DataLoader:
         # If workspace is available, try to load from Azure ML datastore
         if self.workspace:
             try:
+                # Handle azureml:// URI format
+                if datastore_path.startswith("azureml://"):
+                    # Parse the URI to extract the path
+                    # azureml://subscriptions/.../paths/UI/2026-04-04_090211_UTC/creditcard_train.csv
+                    if "/paths/" in datastore_path:
+                        datastore_path = datastore_path.split("/paths/")[-1]
+                    logger.info(f"Extracted datastore path: {datastore_path}")
+                
+                # Get datastore and its connection string
                 datastore = Datastore.get(self.workspace, datastore_name)
-                dataset = Dataset.File.from_files(path=DataPath(datastore, datastore_path))
                 
+                # Get blob service client from datastore
+                account_name = datastore.account_name
+                container_name = datastore.container_name
+                
+                # Build the blob URL
+                from azure.storage.blob import ContainerClient
+                
+                # Try to get account key from datastore
+                account_key = getattr(datastore, 'account_key', None)
+                
+                if account_key:
+                    # Use account key authentication
+                    connection_string = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
+                    container_client = ContainerClient.from_connection_string(connection_string, container_name)
+                else:
+                    # Try using DefaultAzureCredential (works with managed identity, service principal, etc.)
+                    from azure.identity import DefaultAzureCredential
+                    credential = DefaultAzureCredential()
+                    blob_url = f"https://{account_name}.blob.core.windows.net/{container_name}"
+                    container_client = ContainerClient(blob_url, credential)
+                
+                # Download the blob
                 Path(local_download_dir).mkdir(parents=True, exist_ok=True)
-                downloaded_paths = dataset.download(target_path=local_download_dir, overwrite=True)
-                data_path = downloaded_paths[0]
                 
-                df = pd.read_csv(data_path)
+                blob_client = container_client.get_blob_client(datastore_path)
+                blob_data = blob_client.download_blob()
+                
+                # Save to local file
+                local_file = Path(local_download_dir) / Path(datastore_path).name
+                with open(local_file, "wb") as f:
+                    f.write(blob_data.readall())
+                
+                df = pd.read_csv(local_file)
                 logger.info(f"✅ Loaded data from {datastore_name}: shape {df.shape}")
                 
                 return df

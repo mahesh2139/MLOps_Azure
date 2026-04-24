@@ -55,7 +55,6 @@ def run_evaluation(
             logger.info("Attempting CSV fallback...")
             
             try:
-                import pandas as pd
                 x_test = pd.read_csv(test_data_path / "x_test.csv") if (test_data_path / "x_test.csv").exists() else None
                 y_test = pd.read_csv(test_data_path / "y_test.csv") if (test_data_path / "y_test.csv").exists() else None
                 
@@ -74,7 +73,6 @@ def run_evaluation(
         
         # Ensure x_test is a DataFrame for feature names
         if not isinstance(x_test, pd.DataFrame):
-            import pandas as pd
             x_test = pd.DataFrame(x_test)
         
         # Evaluate
